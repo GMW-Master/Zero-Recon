@@ -75,6 +75,7 @@ perform_second_scan() {
 # Function to perform DNS enumeration
 perform_dns_enumeration() {
     echo "${green}${bold}Performing DNS enumeration...${normal}"
+    echo "${bold}have coffe and come back , I will take more time , if the scope is big ${normal}"
     cat "$scan_path/roots.txt" | subfinder -s | anew subs.txt > /dev/null 2>&1
     cat "$scan_path/roots.txt" | shuffledns -silent -w "$ppath/lists/pry-dns.txt" -r "$ppath/lists/resolvers.txt" | anew subs.txt > /dev/null 2>&1
     cat "$scan_path/roots.txt" | haktrails subdomains | anew subs.txt | wc -l > /dev/null 2>&1
@@ -87,6 +88,7 @@ perform_dns_enumeration() {
 # Function to perform DNS resolution
 perform_dns_resolution() {
     echo "${green}${bold}Performing DNS resolution...${normal}"
+    echo "${bold}have coffe and come back , I will take more time , if the scope is big ${normal}"
     puredns -q resolve "$scan_path/subs.txt" -r "$ppath/lists/resolvers.txt" -w "$scan_path/resolved.txt" | wc -l > /dev/null
     cat "$scan_path/subs.txt" | anew resolved.txt > /dev/null 2>&1
     touch "$scan_path/resolved_uniq.txt"
@@ -127,6 +129,54 @@ perform_port_scanning() {
     cat "$scan_path/api_urls.txt"
 }
 
+perform_dirSearch() {
+    echo "${green}${bold}Performing directory scanning...${normal}"
+    mkdir dirsearch
+    dirsearch -l $scan_path/http.txt -i 200,500,405 -o $scan_path/dirsearch/dirsearch.txt
+    cat $scan_path/dirsearch/dirsearch.txt | grep 200 | awk '{print $3}' > $scan_path/dirsearch/200response.txt
+    cat $scan_path/dirsearch/dirsearch.txt | grep 500 | awk '{print $3}' > $scan_path/dirsearch/500response.txt
+    cat $scan_path/dirsearch/dirsearch.txt | grep 405 | awk '{print $3}' > $scan_path/dirsearch/405response.txt
+    dirsearch -l $scan_path/dirsearch/200response.txt -i 200,500 | grep 200 | awk '{print $3}' | tee $scan_path/dirsearch/200response.txt
+    dirsearch -l $scan_path/dirsearch/500response.txt -i 200,500   | awk '{print $3}' | tee $scan_path/dirsearch/200response.txt
+    dirsearch -l $scan_path/dirsearch/405response.txt -i 200,500   | awk '{print $3}' | tee $scan_path/dirsearch/200_post_response.txt
+    
+}
+
+perform_crawling() {
+        echo "${green}${bold}Performing crawling...${normal}"
+        gau --mc 200 $id | tee $scan_path/gau.txt > /dev/null 2>&1
+        gospider -S $scan_path/http.txt --json | jq -r '.output' | tee $scan_path/crawl.txt > /dev/null 2>&1
+        gospider -S $scan_path/dirsearch/200response.txt --json | jq -r '.output' | anew $scan_path/crawl.txt > /dev/null 2>&1
+        gospider -S $scan_path/gau.txt --json | jq -r '.output' | anew $scan_path/crawl.txt > /dev/null 2>&1
+        cat $scan_path/crawl.txt | grep "$id" > $scan_path/crawl.txt
+        cat "$scan_path/crawl.txt" | grep "\.js" | httpx -sr -srd js -o "$scan_path/jsurls.txt"
+}
+
+perform_secret_search() {
+        echo "${green}${bold}Performing Secret scanning...${normal}"
+
+        trufflehog filesystem "$scan_path/js/response/*" > "$scan_path/secrectfound.txt"
+        
+}
+
+perform_nuclei() {
+
+        echo "${green}${bold}Performing Nuclei Scan...${normal}"
+        
+        nuclei -l "$scan_path/http.txt" -s low, medium, high, critical, unknown -t "$ppath/lists/nuclei-templates" -o "$scan_path/nucle.txt"
+     
+}
+
+perform_Vul() {
+
+        echo "${green}${bold}Performing vulnerability scan...${normal}"
+        mkdir $scan_path/possible_Vul_URLs
+        
+         gf xss $scan_path/crawl.txt | sed "s/'\|(\|)//g" | bhedak "FUZZ" 2> /dev/null | anew -q $scan_path/possible_Vul_URLs/xss.txt
+         dalfox file $scan_path/possible_Vul_URLs/xss.txt -o $scan_path/dalfox.txt
+}
+
+
 id="$1"
 ppath="$(pwd)"
 scope_path="$ppath/scope/$id"
@@ -142,5 +192,10 @@ perform_dns_enumeration
 perform_dns_resolution
 extract_ips
 perform_port_scanning
+perform_dirSearch
+perform_crawling
+perform_secret_search
+perform_nuclei
+perform_Vul
 
 echo "${bold}${green}All stages completed.${normal}"
